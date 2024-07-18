@@ -23,7 +23,7 @@
 ;MartianMono Nerd Font Mono:;
 
 
-(setq doom-font (font-spec :family "MartianMono Nerd Font" :size 15 :weight 'semi-light))
+(setq doom-font (font-spec :family "CaskaydiaMono Nerd Font Mono" :size 16 :weight 'SemiBold))
 ;;
 ;; If you or Emacs can't find your font, use 'M-x describe-font' to look them
 ;; up, `M-x eval-region' to execute elisp code, and 'M-x doom/reload-font' to
@@ -42,6 +42,15 @@
 ;; If you use `org' and don't want your org files in the default location below,
 ;; change `org-directory'. It must be set before org loads!
 (setq org-directory "~/org/")
+
+;;---
+
+(setq display-line-numbers-type 'relative)
+
+ (require 'org-download)
+    (setq-default org-download-heading-lvl nil)
+    (setq-default org-download-image-dir "./images")
+
 
 
 ;; Whenever you reconfigure a package, make sure to wrap your config in an
@@ -76,5 +85,15 @@
 ;; You can also try 'gd' (or 'C-c c d') to jump to their definition and see how
 ;; they are implemented.
 
-(setq display-line-numbers-type 'relative)
 
+(after! org
+    ;;(setq org-todo-keywords '((sequence "TODO(t)" "INPROGRESS(i)" "WAITING(w)" "|" "DONE" "CANCELLED(c)")))
+    (setq
+    org-superstar-headline-bullets-list '("✱") ;;🟂🟄✦❖🞛✱🞴◆
+    org-superstar-item-bullet-alist '((?* . ?*)
+                                        (?- . ?⮡)
+                                        (?+ . ?⬥)))
+(custom-set-faces
+ '(org-superstar-header-bullet ((t (:height 1.0)))))
+
+)
