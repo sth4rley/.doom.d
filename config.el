@@ -1,13 +1,6 @@
 ;;; $DOOMDIR/config.el -*- lexical-binding: t; -*-
 
-;; Place your private configuration here! Remember, you do not need to run 'doom
-;; sync' after modifying this file!
-
-
-;; Some functionality uses this to identify you, e.g. GPG configuration, email
-;; clients, file templates and snippets. It is optional.
-;; (setq user-full-name "John Doe"
-;;       user-mail-address "john@doe.com")
+;; you do not need to run 'doom sync' after modifying this file!
 
 ;; Doom exposes five (optional) variables for controlling fonts in Doom:
 ;;
@@ -18,38 +11,20 @@
 ;; - `doom-symbol-font' -- for symbols
 ;; - `doom-serif-font' -- for the `fixed-pitch-serif' face
 ;;
-;; See 'C-h v doom-font' for documentation and more examples of what they
-;; accept. For example:
-;MartianMono Nerd Font Mono:;
+;; See 'C-h v doom-font' for documentation and more examples of what they accept.
 
 
-(setq doom-font (font-spec :family "CaskaydiaMono Nerd Font Mono" :size 16 :weight 'SemiBold))
-;;
-;; If you or Emacs can't find your font, use 'M-x describe-font' to look them
-;; up, `M-x eval-region' to execute elisp code, and 'M-x doom/reload-font' to
-;; refresh your font settings. If Emacs still can't find your font, it likely
-;; wasn't installed correctly. Font issues are rarely Doom issues!
+(setq doom-font (font-spec :family "CaskaydiaMono Nerd Font Mono" :size 17 :weight 'SemiBold)) ;; SPC h r f -> reload font
 
 ;; There are two ways to load a theme. Both assume the theme is installed and
 ;; available. You can either set `doom-theme' or manually load a theme with the
 ;; `load-theme' function. This is the default:
 (setq doom-theme 'doom-sourcerer)
 
-;; This determines the style of line numbers in effect. If set to `nil', line
-;; numbers are disabled. For relative line numbers, set this to `relative'.
-(setq display-line-numbers-type t)
-
-;; If you use `org' and don't want your org files in the default location below,
-;; change `org-directory'. It must be set before org loads!
-(setq org-directory "~/org/")
-
-;;---
-
 (setq display-line-numbers-type 'relative)
 
- (require 'org-download)
-    (setq-default org-download-heading-lvl nil)
-    (setq-default org-download-image-dir "./images")
+
+(setq org-directory "~/org/")
 
 
 
@@ -87,13 +62,43 @@
 
 
 (after! org
-    ;;(setq org-todo-keywords '((sequence "TODO(t)" "INPROGRESS(i)" "WAITING(w)" "|" "DONE" "CANCELLED(c)")))
-    (setq
-    org-superstar-headline-bullets-list '("✱") ;;🟂🟄✦❖🞛✱🞴◆
-    org-superstar-item-bullet-alist '((?* . ?*)
-                                        (?- . ?⮡)
-                                        (?+ . ?⬥)))
-(custom-set-faces
- '(org-superstar-header-bullet ((t (:height 1.0)))))
+  ;;(setq org-todo-keywords '((sequence "TODO(t)" "INPROGRESS(i)" "WAITING(w)" "|" "DONE" "CANCELLED(c)")))
+  (setq
+   org-superstar-headline-bullets-list '("✱") ;;🟂🟄✦❖🞛✱🞴◆
+   org-superstar-item-bullet-alist '((?* . ?*)
+                                     (?- . ?⮡)
+                                     (?+ . ?⬥)))
+  ;;(require 'org-download)
+  ;;   (setq-default org-download-heading-lvl nil)
+  ;;   (setq-default org-download-image-dir "./images")
 
-)
+
+
+  (custom-set-faces
+   ;; '(org-superstar-header-bullet ((t (:height 1.0))))
+   ;; '(org-level-1 ((t (:inherit outline-1 :height 1.3))))
+   ;;'(org-level-2 ((t (:inherit outline-2 :height 1.2))))
+   ;;'(org-level-3 ((t (:inherit outline-3 :height 1.15))))
+   ;;'(org-level-4 ((t (:inherit outline-4 :height 1.1))))
+   )
+
+  )
+
+
+(after! doom-modeline
+  (setq doom-modeline-check-simple-format t)
+  (setq doom-modeline-icon t)
+  ;;(setq doom-modeline-battery t)
+  ;;(setq doom-modeline-time t)
+  ;;(setq doom-modeline-workspace-name t)
+  ;;(setq doom-modeline-position-column-line-format '("%l:%c"))
+
+  (setq doom-modeline-lsp t)
+  (setq doom-modeline-hud t)
+  (setq doom-modeline-env-version t)
+
+  ;; An evil mode indicator is redundant with cursor shape
+  (setq doom-modeline-modal nil)
+
+  )
+
