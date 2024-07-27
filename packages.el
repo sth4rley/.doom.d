@@ -50,3 +50,6 @@
 ;; (unpin! t)
 
 (package! org-download)
+(package! doom-moonfly-theme
+  :recipe (:host github
+           :repo "stackmystack/doom-moonfly-theme"))

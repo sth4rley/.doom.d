@@ -19,14 +19,12 @@
 ;; There are two ways to load a theme. Both assume the theme is installed and
 ;; available. You can either set `doom-theme' or manually load a theme with the
 ;; `load-theme' function. This is the default:
-(setq doom-theme 'doom-sourcerer)
+;; (setq doom-theme 'doom-sourcerer)
+(setq doom-theme 'doom-horizon)
 
-(setq display-line-numbers-type 'relative)
-
+(setq display-line-numbers-type 'relative) ;
 
 (setq org-directory "~/org/")
-
-
 
 ;; Whenever you reconfigure a package, make sure to wrap your config in an
 ;; `after!' block, otherwise Doom's defaults may override your settings. E.g.
@@ -74,13 +72,7 @@
 
 
 
-  (custom-set-faces
-   ;; '(org-superstar-header-bullet ((t (:height 1.0))))
-   ;; '(org-level-1 ((t (:inherit outline-1 :height 1.3))))
-   ;;'(org-level-2 ((t (:inherit outline-2 :height 1.2))))
-   ;;'(org-level-3 ((t (:inherit outline-3 :height 1.15))))
-   ;;'(org-level-4 ((t (:inherit outline-4 :height 1.1))))
-   )
+
 
   )
 
@@ -102,3 +94,11 @@
 
   )
 
+(custom-set-faces
+
+ ;; '(org-superstar-header-bullet ((t (:height 1.0))))
+ ;; '(org-level-1 ((t (:inherit outline-1 :height 1.3))))
+ ;; '(org-level-2 ((t (:inherit outline-2 :height 1.2))))
+ ;; '(org-level-3 ((t (:inherit outline-3 :height 1.15))))
+ ;; '(org-level-4 ((t (:inherit outline-4 :height 1.1))))
+ )
