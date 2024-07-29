@@ -48,8 +48,3 @@
 ;; (unpin! pinned-package another-pinned-package)
 ;; ...Or *all* packages (NOT RECOMMENDED; will likely break things)
 ;; (unpin! t)
-
-(package! org-download)
-(package! doom-moonfly-theme
-  :recipe (:host github
-           :repo "stackmystack/doom-moonfly-theme"))

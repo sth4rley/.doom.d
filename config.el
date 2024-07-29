@@ -1,7 +1,5 @@
 ;;; $DOOMDIR/config.el -*- lexical-binding: t; -*-
 
-;; you do not need to run 'doom sync' after modifying this file!
-
 ;; Doom exposes five (optional) variables for controlling fonts in Doom:
 ;;
 ;; - `doom-font' -- the primary font to use
@@ -11,20 +9,31 @@
 ;; - `doom-symbol-font' -- for symbols
 ;; - `doom-serif-font' -- for the `fixed-pitch-serif' face
 ;;
-;; See 'C-h v doom-font' for documentation and more examples of what they accept.
-
-
+;; See 'C-h v doom-font' for documentation and more examples of what they
+;; accept. For example:
+;;
+;;(setq doom-font (font-spec :family "Fira Code" :size 12 :weight 'semi-light)
+;;      doom-variable-pitch-font (font-spec :family "Fira Sans" :size 13))
+;;
+;; If you or Emacs can't find your font, use 'M-x describe-font' to look them
+;; up, `M-x eval-region' to execute elisp code, and 'M-x doom/reload-font' to
+;; refresh your font settings. If Emacs still can't find your font, it likely
+;; wasn't installed correctly. Font issues are rarely Doom issues!
 (setq doom-font (font-spec :family "CaskaydiaMono Nerd Font Mono" :size 17 :weight 'SemiBold)) ;; SPC h r f -> reload font
 
 ;; There are two ways to load a theme. Both assume the theme is installed and
 ;; available. You can either set `doom-theme' or manually load a theme with the
 ;; `load-theme' function. This is the default:
-;; (setq doom-theme 'doom-sourcerer)
-(setq doom-theme 'doom-horizon)
+(setq doom-theme 'doom-solarized-light)
 
-(setq display-line-numbers-type 'relative) ;
+;; This determines the style of line numbers in effect. If set to `nil', line
+;; numbers are disabled. For relative line numbers, set this to `relative'.
+(setq display-line-numbers-type `relative)
 
+;; If you use `org' and don't want your org files in the default location below,
+;; change `org-directory'. It must be set before org loads!
 (setq org-directory "~/org/")
+
 
 ;; Whenever you reconfigure a package, make sure to wrap your config in an
 ;; `after!' block, otherwise Doom's defaults may override your settings. E.g.
@@ -58,47 +67,55 @@
 ;; You can also try 'gd' (or 'C-c c d') to jump to their definition and see how
 ;; they are implemented.
 
-
-(after! org
-  ;;(setq org-todo-keywords '((sequence "TODO(t)" "INPROGRESS(i)" "WAITING(w)" "|" "DONE" "CANCELLED(c)")))
-  (setq
-   org-superstar-headline-bullets-list '("✱") ;;🟂🟄✦❖🞛✱🞴◆
-   org-superstar-item-bullet-alist '((?* . ?*)
-                                     (?- . ?⮡)
-                                     (?+ . ?⬥)))
-  ;;(require 'org-download)
-  ;;   (setq-default org-download-heading-lvl nil)
-  ;;   (setq-default org-download-image-dir "./images")
-
-
-
-
-
-  )
-
-
 (after! doom-modeline
   (setq doom-modeline-check-simple-format t)
-  (setq doom-modeline-icon t)
-  ;;(setq doom-modeline-battery t)
-  ;;(setq doom-modeline-time t)
-  ;;(setq doom-modeline-workspace-name t)
-  ;;(setq doom-modeline-position-column-line-format '("%l:%c"))
-
-  (setq doom-modeline-lsp t)
-  (setq doom-modeline-hud t)
   (setq doom-modeline-env-version t)
-
   ;; An evil mode indicator is redundant with cursor shape
   (setq doom-modeline-modal nil)
-
   )
 
-(custom-set-faces
+(setq lsp-lens-enable nil)
+(setq lsp-headerline-breadcrumb-enable nil)
 
- ;; '(org-superstar-header-bullet ((t (:height 1.0))))
- ;; '(org-level-1 ((t (:inherit outline-1 :height 1.3))))
- ;; '(org-level-2 ((t (:inherit outline-2 :height 1.2))))
- ;; '(org-level-3 ((t (:inherit outline-3 :height 1.15))))
- ;; '(org-level-4 ((t (:inherit outline-4 :height 1.1))))
- )
+
+;; LSP
+(after! lsp-ui
+  (setq lsp-ui-sideline-enable t)
+  (setq lsp-ui-sideline-show-code-actions t)
+  (setq lsp-ui-sideline-enable t)
+  (setq lsp-ui-sideline-show-hover t)
+  (setq lsp-ui-doc-max-width 80 lsp-ui-doc-max-height 20)
+  (map! :leader :desc "Show LSP Doc" "m d" #'lsp-ui-doc-glance)
+)
+
+;; booster
+(defun lsp-booster--advice-json-parse (old-fn &rest args)
+  "Try to parse bytecode instead of json."
+  (or
+   (when (equal (following-char) ?#)
+     (let ((bytecode (read (current-buffer))))
+       (when (byte-code-function-p bytecode)
+         (funcall bytecode))))
+   (apply old-fn args)))
+(advice-add (if (progn (require 'json)
+                       (fboundp 'json-parse-buffer))
+                'json-parse-buffer
+              'json-read)
+            :around
+            #'lsp-booster--advice-json-parse)
+
+(defun lsp-booster--advice-final-command (old-fn cmd &optional test?)
+  "Prepend emacs-lsp-booster command to lsp CMD."
+  (let ((orig-result (funcall old-fn cmd test?)))
+    (if (and (not test?)                             ;; for check lsp-server-present?
+             (not (file-remote-p default-directory)) ;; see lsp-resolve-final-command, it would add extra shell wrapper
+             lsp-use-plists
+             (not (functionp 'json-rpc-connection))  ;; native json-rpc
+             (executable-find "emacs-lsp-booster"))
+        (progn
+          (when-let ((command-from-exec-path (executable-find (car orig-result))))  ;; resolve command from exec-path (in case not found in $PATH)
+            (setcar orig-result command-from-exec-path))
+          (message "Using emacs-lsp-booster for %s!" orig-result)
+          (cons "emacs-lsp-booster" orig-result))
+      orig-result)))
+(advice-add 'lsp-resolve-final-command :around #'lsp-booster--advice-final-command)
