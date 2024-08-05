@@ -19,12 +19,14 @@
 ;; up, `M-x eval-region' to execute elisp code, and 'M-x doom/reload-font' to
 ;; refresh your font settings. If Emacs still can't find your font, it likely
 ;; wasn't installed correctly. Font issues are rarely Doom issues!
-(setq doom-font (font-spec :family "CaskaydiaMono Nerd Font Mono" :size 17 :weight 'SemiBold)) ;; SPC h r f -> reload font
+(setq doom-font (font-spec :family "CaskaydiaMono Nerd Font Mono" :size 15)
+      doom-variable-pitch-font (font-spec :family "CaskaydiaMono Nerd Font Propo" :size 15)) ;; SPC h r f -> reload font
+;; (setq doom-font (font-spec :family "CaskaydiaMono Nerd Font Mono" :size 15 :weight 'SemiBold)) ;; SPC h r f -> reload font
 
 ;; There are two ways to load a theme. Both assume the theme is installed and
 ;; available. You can either set `doom-theme' or manually load a theme with the
 ;; `load-theme' function. This is the default:
-(setq doom-theme 'doom-solarized-light)
+(setq doom-theme 'doom-material-dark)
 
 ;; This determines the style of line numbers in effect. If set to `nil', line
 ;; numbers are disabled. For relative line numbers, set this to `relative'.
@@ -74,48 +76,41 @@
   (setq doom-modeline-modal nil)
   )
 
-(setq lsp-lens-enable nil)
-(setq lsp-headerline-breadcrumb-enable nil)
+
+(fset 'rainbow-delimiters-mode #'ignore)
+
+(setq fancy-splash-image (file-name-concat doom-user-dir "cacochan.png"))
+;; Hide the menu for as minimalistic a startup screen as possible.
+;; (setq +doom-dashboard-functions '(doom-dashboard-widget-banner))
+
+;; scratch buffer org mode
+(setq doom-scratch-initial-major-mode 'org-mode)
 
 
-;; LSP
+;;; :editor evil
+;; Focus new window after splitting
+(setq evil-split-window-below t
+      evil-vsplit-window-right t)
+
+(after! lsp-mode
+  (setq lsp-enable-symbol-highlighting nil
+        ;; If an LSP server isn't present when I start a prog-mode buffer, you
+        ;; don't need to tell me. I know. On some machines I don't care to have
+        ;; a whole development environment for some ecosystems.
+        lsp-enable-suggest-server-download nil
+        )
+  )
+
 (after! lsp-ui
-  (setq lsp-ui-sideline-enable t)
-  (setq lsp-ui-sideline-show-code-actions t)
-  (setq lsp-ui-sideline-enable t)
-  (setq lsp-ui-sideline-show-hover t)
-  (setq lsp-ui-doc-max-width 80 lsp-ui-doc-max-height 20)
-  (map! :leader :desc "Show LSP Doc" "m d" #'lsp-ui-doc-glance)
-)
+  (setq lsp-ui-doc-enable nil ; redundant with K
+        lsp-ui-sideline-enable nil  ; no more useful than flycheck
+        )
+  )
 
-;; booster
-(defun lsp-booster--advice-json-parse (old-fn &rest args)
-  "Try to parse bytecode instead of json."
-  (or
-   (when (equal (following-char) ?#)
-     (let ((bytecode (read (current-buffer))))
-       (when (byte-code-function-p bytecode)
-         (funcall bytecode))))
-   (apply old-fn args)))
-(advice-add (if (progn (require 'json)
-                       (fboundp 'json-parse-buffer))
-                'json-parse-buffer
-              'json-read)
-            :around
-            #'lsp-booster--advice-json-parse)
 
-(defun lsp-booster--advice-final-command (old-fn cmd &optional test?)
-  "Prepend emacs-lsp-booster command to lsp CMD."
-  (let ((orig-result (funcall old-fn cmd test?)))
-    (if (and (not test?)                             ;; for check lsp-server-present?
-             (not (file-remote-p default-directory)) ;; see lsp-resolve-final-command, it would add extra shell wrapper
-             lsp-use-plists
-             (not (functionp 'json-rpc-connection))  ;; native json-rpc
-             (executable-find "emacs-lsp-booster"))
-        (progn
-          (when-let ((command-from-exec-path (executable-find (car orig-result))))  ;; resolve command from exec-path (in case not found in $PATH)
-            (setcar orig-result command-from-exec-path))
-          (message "Using emacs-lsp-booster for %s!" orig-result)
-          (cons "emacs-lsp-booster" orig-result))
-      orig-result)))
-(advice-add 'lsp-resolve-final-command :around #'lsp-booster--advice-final-command)
+;; packages
+(use-package! devdocs
+  :config
+  (map! :leader "d d" #'devdocs-lookup)
+  (map! :leader "d s" #'devdocs-peruse)
+  )
