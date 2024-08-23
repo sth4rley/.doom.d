@@ -4,7 +4,7 @@
       doom-font (font-spec :family "JetBrainsMono Nerd Font Mono" :size 15)
       doom-variable-pitch-font (font-spec :family "DejaVu Sans" :size 20))
 
-;; Line numbers are pretty slow all around. The performance boost of disabling
+;; Line numbers are pretty slgw all around. The performance boost of disabling
 ;; them outweighs the utility of always keeping them on.
 (setq display-line-numbers-type nil)
 
@@ -87,3 +87,15 @@
   (map! :leader "d d" #'devdocs-lookup)
   (map! :leader "d s" #'devdocs-peruse)
   )
+
+(add-to-list 'initial-frame-alist '(fullscreen . maximized))
+
+(use-package! copilot
+  :hook ((prog-mode . copilot-mode)       
+         (org-mode . (lambda () (copilot-mode -1)))) 
+
+  :bind (:map copilot-completion-map
+              ("<tab>" . 'copilot-accept-completion)
+              ("TAB" . 'copilot-accept-completion)
+              ("C-TAB" . 'copilot-accept-completion-by-word)
+              ("C-<tab>" . 'copilot-accept-completion-by-word)))
