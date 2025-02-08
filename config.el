@@ -1,35 +1,18 @@
 ;;; $DOOMDIR/config.el -*- lexical-binding: t; -*-
+;; you do not need to run 'doom sync' after modifying this file!
 
-(setq doom-theme 'doom-1337
-      doom-font (font-spec :family "JetBrainsMono Nerd Font Mono" :size 15)
-      doom-variable-pitch-font (font-spec :family "DejaVu Sans" :size 20))
-
-;; Line numbers are pretty slgw all around. The performance boost of disabling
-;; them outweighs the utility of always keeping them on.
-(setq display-line-numbers-type nil)
-
-;; If you use `org' and don't want your org files in the default location below,
-;; change `org-directory'. It must be set before org loads!
+(setq doom-theme 'doom-ir-black)
+(setq doom-font (font-spec :family "JetBrainsMono Nerd Font" :size 15))
+(setq display-line-numbers-type 'relative)
 (setq org-directory "~/org/")
+(setq evil-split-window-below t evil-vsplit-window-right t)
 
-(setq fancy-splash-image (file-name-concat doom-user-dir "cacochan.png"))
-
-;; Hide the menu for as minimalistic a startup screen as possible.
-;; (setq +doom-dashboard-functions '(doom-dashboard-widget-banner))
+(add-to-list 'default-frame-alist '(inhibit-double-buffering . t)) ;; prevent some cases of flickering
+(add-to-list 'initial-frame-alist '(fullscreen . maximized))
+(fset 'rainbow-delimiters-mode #'ignore) ;; disable rainbow delimiters 💅
 
 ;; scratch buffer org mode
-(setq doom-scratch-initial-major-mode 'org-mode)
-
-;;; :editor evil
-;; Focus new window after splitting
-(setq evil-split-window-below t
-      evil-vsplit-window-right t)
-
-;; Prevents some cases of Emacs flickering.
-(add-to-list 'default-frame-alist '(inhibit-double-buffering . t))
-
-(fset 'rainbow-delimiters-mode #'ignore)
-
+;;(setq doom-scratch-initial-major-mode 'org-mode)
 
 ;; Whenever you reconfigure a package, make sure to wrap your config in an
 ;; `after!' block, otherwise Doom's defaults may override your settings. E.g.
@@ -53,49 +36,42 @@
 ;;   this file. Emacs searches the `load-path' when you load packages with
 ;;   `require' or `use-package'.
 ;; - `map!' for binding new keys
-;;
-;; To get information about any of these functions/macros press 'K' This will open documentation for it, including demos of how they are used.
-;; Alternatively, use `C-h o' to look up a symbol (functions, variables, faces, etc).
-;; You can also try 'gd' to jump to their definition and see how they are implemented.
-
 
 (after! doom-modeline
+  (setq doom-modeline-modal nil) ;; an evil mode indicator is redundant with cursor shape
   (setq doom-modeline-check-simple-format t)
   (setq doom-modeline-env-version t)
-  ;; An evil mode indicator is redundant with cursor shape
-  (setq doom-modeline-modal nil)
-  )
+)
 
 (after! lsp-mode
-  (setq lsp-enable-symbol-highlighting nil
-        ;; If an LSP server isn't present when I start a prog-mode buffer, you
-        ;; don't need to tell me. I know. On some machines I don't care to have
-        ;; a whole development environment for some ecosystems.
-        lsp-enable-suggest-server-download nil
-        )
-  )
+  (setq lsp-enable-symbol-highlighting nil)
+  ;; If an LSP server isn't present when I start a prog-mode buffer, you
+  ;; don't need to tell me. I know. On some machines I don't care to have
+  ;; a whole development environment for some ecosystems.
+  (setq lsp-enable-suggest-server-download nil)
+)
 
 (after! lsp-ui
-  (setq lsp-ui-doc-enable nil ; redundant with K
-        lsp-ui-sideline-enable nil  ; no more useful than flycheck
-        )
-  )
+  (setq lsp-ui-doc-enable nil) ;; redundant with K
+  (setq lsp-ui-sideline-enable nil) ;; no more useuful than flycheck
+)
 
-;; packages
-(use-package! devdocs
+(use-package! lsp-bridge
   :config
-  (map! :leader "d d" #'devdocs-lookup)
-  (map! :leader "d s" #'devdocs-peruse)
-  )
-
-(add-to-list 'initial-frame-alist '(fullscreen . maximized))
+  (setq lsp-bridge-enable-log nil)
+  (setq lsp-bridge-enable-hover-diagnostic t)
+  (global-lsp-bridge-mode))
 
 (use-package! copilot
-  :hook ((prog-mode . copilot-mode)       
-         (org-mode . (lambda () (copilot-mode -1)))) 
-
+  ;;:hook (prog-mode . copilot-mode)
   :bind (:map copilot-completion-map
               ("<tab>" . 'copilot-accept-completion)
               ("TAB" . 'copilot-accept-completion)
               ("C-TAB" . 'copilot-accept-completion-by-word)
-              ("C-<tab>" . 'copilot-accept-completion-by-word)))
+              ("C-<tab>" . 'copilot-accept-completion-by-word)
+              ("C-n" . 'copilot-next-completion)
+              ("C-p" . 'copilot-previous-completion)
+              ("C-j" . 'copilot-accept-completion))
+  :config
+  (map! :leader
+        :desc "Toggle Copilot Mode" "t c" #'copilot-mode))
