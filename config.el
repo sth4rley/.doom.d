@@ -1,5 +1,4 @@
 ;;; $DOOMDIR/config.el -*- lexical-binding: t; -*-
-;; you do not need to run 'doom sync' after modifying this file!
 
 (setq doom-theme 'doom-ir-black)
 (setq doom-font (font-spec :family "JetBrainsMono Nerd Font" :size 15))
@@ -10,9 +9,7 @@
 (add-to-list 'default-frame-alist '(inhibit-double-buffering . t)) ;; prevent some cases of flickering
 (add-to-list 'initial-frame-alist '(fullscreen . maximized))
 (fset 'rainbow-delimiters-mode #'ignore) ;; disable rainbow delimiters 💅
-
-;; scratch buffer org mode
-;;(setq doom-scratch-initial-major-mode 'org-mode)
+(setq doom-scratch-initial-major-mode 'org-mode) ;; scratch buffer org mode
 
 ;; Whenever you reconfigure a package, make sure to wrap your config in an
 ;; `after!' block, otherwise Doom's defaults may override your settings. E.g.
@@ -43,24 +40,26 @@
   (setq doom-modeline-env-version t)
 )
 
-(after! lsp-mode
-  (setq lsp-enable-symbol-highlighting nil)
+;;(after! lsp-mode
+;;  (setq lsp-enable-symbol-highlighting nil)
   ;; If an LSP server isn't present when I start a prog-mode buffer, you
   ;; don't need to tell me. I know. On some machines I don't care to have
   ;; a whole development environment for some ecosystems.
-  (setq lsp-enable-suggest-server-download nil)
-)
+;;  (setq lsp-enable-suggest-server-download nil)
+;;)
 
-(after! lsp-ui
-  (setq lsp-ui-doc-enable nil) ;; redundant with K
-  (setq lsp-ui-sideline-enable nil) ;; no more useuful than flycheck
-)
+;;(after! lsp-ui
+;;  (setq lsp-ui-doc-enable nil) ;; redundant with K
+;;  (setq lsp-ui-sideline-enable nil) ;; no more useuful than flycheck
+;;)
 
 (use-package! lsp-bridge
   :config
   (setq lsp-bridge-enable-log nil)
   (setq lsp-bridge-enable-hover-diagnostic t)
-  (global-lsp-bridge-mode))
+  (setq lsp-bridge-python-command "/usr/bin/python3")
+  (global-lsp-bridge-mode)
+  )
 
 (use-package! copilot
   ;;:hook (prog-mode . copilot-mode)
@@ -75,3 +74,10 @@
   :config
   (map! :leader
         :desc "Toggle Copilot Mode" "t c" #'copilot-mode))
+
+(use-package copilot-chat
+  :bind (:map global-map
+        ("C-c C-." . copilot-chat-transient)
+        ("C-c C-y" . copilot-chat-yank)
+            )
+)

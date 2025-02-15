@@ -51,6 +51,8 @@
 (package! copilot
   :recipe (:host github :repo "copilot-emacs/copilot.el" :files ("*.el")))
 
+(package! copilot-chat)
+
 (when (package! lsp-bridge
         :recipe (:host github
                  :repo "manateelazycat/lsp-bridge"
@@ -60,3 +62,4 @@
                  :build (:not compile)))
   (package! markdown-mode)
   (package! yasnippet))
+
