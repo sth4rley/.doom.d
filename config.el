@@ -38,13 +38,13 @@
   (setq doom-modeline-modal nil) ;; an evil mode indicator is redundant with cursor shape
   (setq doom-modeline-check-simple-format t)
   (setq doom-modeline-env-version t)
-)
+  )
 
 ;;(after! lsp-mode
 ;;  (setq lsp-enable-symbol-highlighting nil)
-  ;; If an LSP server isn't present when I start a prog-mode buffer, you
-  ;; don't need to tell me. I know. On some machines I don't care to have
-  ;; a whole development environment for some ecosystems.
+;; If an LSP server isn't present when I start a prog-mode buffer, you
+;; don't need to tell me. I know. On some machines I don't care to have
+;; a whole development environment for some ecosystems.
 ;;  (setq lsp-enable-suggest-server-download nil)
 ;;)
 
@@ -61,6 +61,15 @@
   (global-lsp-bridge-mode)
   )
 
+(after! lsp-bridge
+  ;; Definir o servidor LSP como 'pyright'
+  (setq lsp-bridge-python-lsp-server 'pyright)
+
+  ;; Garantir que python-mode não está na lista de múltiplos servidores
+  (setq lsp-bridge-multi-lang-server-mode-list
+        (assq-delete-all 'python-mode lsp-bridge-multi-lang-server-mode-list))
+  )
+
 (use-package! copilot
   ;;:hook (prog-mode . copilot-mode)
   :bind (:map copilot-completion-map
@@ -72,12 +81,21 @@
               ("C-p" . 'copilot-previous-completion)
               ("C-j" . 'copilot-accept-completion))
   :config
+  (add-to-list 'copilot-indentation-alist '(prog-mode 2))
+  (add-to-list 'copilot-indentation-alist '(org-mode 2))
+  (add-to-list 'copilot-indentation-alist '(text-mode 2))
+  (add-to-list 'copilot-indentation-alist '(closure-mode 2))
+  (add-to-list 'copilot-indentation-alist '(emacs-lisp-mode 2))
   (map! :leader
         :desc "Toggle Copilot Mode" "t c" #'copilot-mode))
 
+
 (use-package copilot-chat
   :bind (:map global-map
-        ("C-c C-." . copilot-chat-transient)
-        ("C-c C-y" . copilot-chat-yank)
-            )
-)
+              ("C-c C-." . copilot-chat-transient)
+              ("C-c C-y" . copilot-chat-yank)
+              ("C-c M-y" . copilot-chat-yank-pop)
+              ("C-c C-M-y" . (lambda () (interactive) (copilot-chat-yank-pop -1)))
+              ("C-c C-c" . copilot-chat-hide)
+              )
+  )

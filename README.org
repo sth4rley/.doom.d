@@ -1,0 +1,9 @@
+#+TITLE: Emacs Config
+#+DESCRIPTION: Mainly for personal backups
+
+* Prerequisites
+ - Git 2.23+
+ - Emacs 27.1–29.4 (Recommended: 29.4 + native-comp)
+ - ripgrep 11.0+
+ - GNU find
+ - OPTIONAL: fd 7.3.0+ (improves file indexing performance for some commands)
