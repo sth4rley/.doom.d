@@ -1,6 +1,6 @@
 ;;; $DOOMDIR/config.el -*- lexical-binding: t; -*-
 
-(setq doom-theme 'doom-ir-black)
+(setq doom-theme 'doom-sourcerer)
 (setq doom-font (font-spec :family "JetBrainsMono Nerd Font" :size 15))
 (setq display-line-numbers-type 'relative)
 (setq org-directory "~/org/")
