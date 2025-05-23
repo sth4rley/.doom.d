@@ -42,12 +42,20 @@
   (setq doom-modeline-env-version t)
   )
 
+
 (use-package copilot-chat
   :bind (:map global-map
               ("C-c C-." . copilot-chat-transient)
               ("C-c C-y" . copilot-chat-yank)
               ("C-c M-y" . copilot-chat-yank-pop)
               ("C-c C-M-y" . (lambda () (interactive) (copilot-chat-yank-pop -1)))
-              ("C-c C-c" . copilot-chat-hide)
-              )
+              ("C-c C-c" . copilot-chat))
   )
+
+(add-hook 'git-commit-setup-hook 'copilot-chat-insert-commit-message)
+(setq copilot-chat-follow t)
+
+(add-to-list 'display-buffer-alist
+             '("\\*Copilot Chat.*"
+               (display-buffer-reuse-window display-buffer-in-side-window)
+               (side . right) (slot . 1) (window-width . 0.4))) ;; 40% de largura
