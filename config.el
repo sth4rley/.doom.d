@@ -1,6 +1,6 @@
 ;;; $DOOMDIR/config.el -*- lexical-binding: t; -*-
 
-(setq doom-theme 'doom-tomorrow-night)
+(setq doom-theme 'doom-1337)
 (setq doom-font (font-spec :family "JetBrainsMono Nerd Font" :size 15))
 (setq display-line-numbers-type 'relative)
 (setq org-directory "~/org/")
@@ -10,6 +10,20 @@
 (add-to-list 'initial-frame-alist '(fullscreen . maximized))
 (fset 'rainbow-delimiters-mode #'ignore) ;; disable rainbow delimiters 💅
 (setq doom-scratch-initial-major-mode 'org-mode) ;; scratch buffer org mode
+
+;;(setq scroll-step 1
+;;      scroll-margin 3
+;;      scroll-conservatively 101)
+
+;;(setq pixel-scroll-precision-use-momentum t)
+;;(pixel-scroll-precision-mode 1)
+
+
+(setq mouse-wheel-scroll-amount '(1 ((shift) . 1) ((control) . nil)))
+(setq mouse-wheel-progressive-speed nil) ;; desativa aceleração
+(setq scroll-conservatively 101)
+(setq scroll-margin 3)
+
 
 ;; Whenever you reconfigure a package, make sure to wrap your config in an
 ;; `after!' block, otherwise Doom's defaults may override your settings. E.g.
@@ -43,19 +57,65 @@
   )
 
 
-(use-package copilot-chat
-  :bind (:map global-map
-              ("C-c C-." . copilot-chat-transient)
-              ("C-c C-y" . copilot-chat-yank)
-              ("C-c M-y" . copilot-chat-yank-pop)
-              ("C-c C-M-y" . (lambda () (interactive) (copilot-chat-yank-pop -1)))
-              ("C-c C-c" . copilot-chat))
-  )
+(use-package! copilot-chat) ;; We define bindings below using the map! macro
 
-(add-hook 'git-commit-setup-hook 'copilot-chat-insert-commit-message)
+;; (add-hook 'git-commit-setup-hook 'copilot-chat-insert-commit-message)
 (setq copilot-chat-follow t)
 
-(add-to-list 'display-buffer-alist
-             '("\\*Copilot Chat.*"
-               (display-buffer-reuse-window display-buffer-in-side-window)
-               (side . right) (slot . 1) (window-width . 0.4))) ;; 40% de largura
+(after! copilot-chat
+  (set-popup-rule! "^\*Copilot Chat.*"
+    :side 'right      ; Exibir no lado direito
+    :size 0.33        ; Ocupar 33% da largura do frame
+    :select t         ; Selecionar automaticamente a janela quando ela abrir
+    :quit t           ; Torná-la "quit-able" (essencial para o ESC)
+    :ttl nil))        ; Não fechar automaticamente (time-to-live)
+
+;; accept completion from copilot and fallback to company
+;; acredito que eu não esteja usando o company, mas sim o corfu (verificar em init.el)
+(use-package! copilot
+  :hook (prog-mode . copilot-mode)
+  :bind (:map copilot-completion-map
+              ("<tab>" . 'copilot-accept-completion)
+              ("TAB" . 'copilot-accept-completion)
+              ("C-TAB" . 'copilot-accept-completion-by-word)
+              ("C-<tab>" . 'copilot-accept-completion-by-word))
+  :config
+  ;; Fix for "copilot--infer-indentation-offset found no mode-specific indentation offset"
+  (setq copilot-indentation-offset 2))
+
+;;; Standardized Copilot Keybindings
+(map! :leader
+      :prefix ("z" . "Copilot") ;; SPC z
+      ;; Chat Commands
+      "c" #'copilot-chat
+      "b" #'copilot-chat-chat-buffer
+      "r" #'copilot-chat-chat-region
+      ;; Yank Commands
+      "y" #'copilot-chat-yank
+      "Y" #'copilot-chat-yank-pop)
+
+
+;; Customizations for copilot-chat, including commit message generation
+(after! copilot-chat
+  ;; Funções personalizadas para mensagens de commit do Copilot
+  (defun my/copilot-insert-commit-message-en ()
+    "Generate a commit message in English using Copilot."
+    (interactive)
+    (let ((copilot-chat-prompts
+           (cons '("commit-message" . "Write a concise git commit message in the conventional commit format for the following diff. The message should be in English:\n\n{diff}")
+                 (assq-delete-all "commit-message" copilot-chat-prompts))))
+      (copilot-chat-insert-commit-message)))
+
+  (defun my/copilot-insert-commit-message-pt-br ()
+    "Generate a commit message in Brazilian Portuguese using Copilot."
+    (interactive)
+    (let ((copilot-chat-prompts
+           (cons '("commit-message" . "Escreva uma mensagem de commit concisa no formato de conventional commit para o seguinte diff. A mensagem deve ser em português do Brasil:\n\n{diff}")
+                 (assq-delete-all "commit-message" copilot-chat-prompts))))
+      (copilot-chat-insert-commit-message)))
+
+  ;; Adiciona os atalhos para as funções de commit no menu do Copilot
+  (map! :leader
+        :prefix ("z" . "Copilot")
+        "m" #'my/copilot-insert-commit-message-en
+        "M" #'my/copilot-insert-commit-message-pt-br))
