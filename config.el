@@ -1,6 +1,6 @@
 ;;; $DOOMDIR/config.el -*- lexical-binding: t; -*-
 
-(setq doom-theme 'doom-1337)
+(setq doom-theme 'doom-one)
 (setq doom-font (font-spec :family "JetBrainsMono Nerd Font" :size 15))
 (setq display-line-numbers-type 'relative)
 (setq org-directory "~/org/")
@@ -93,29 +93,3 @@
       ;; Yank Commands
       "y" #'copilot-chat-yank
       "Y" #'copilot-chat-yank-pop)
-
-
-;; Customizations for copilot-chat, including commit message generation
-(after! copilot-chat
-  ;; Funções personalizadas para mensagens de commit do Copilot
-  (defun my/copilot-insert-commit-message-en ()
-    "Generate a commit message in English using Copilot."
-    (interactive)
-    (let ((copilot-chat-prompts
-           (cons '("commit-message" . "Write a concise git commit message in the conventional commit format for the following diff. The message should be in English:\n\n{diff}")
-                 (assq-delete-all "commit-message" copilot-chat-prompts))))
-      (copilot-chat-insert-commit-message)))
-
-  (defun my/copilot-insert-commit-message-pt-br ()
-    "Generate a commit message in Brazilian Portuguese using Copilot."
-    (interactive)
-    (let ((copilot-chat-prompts
-           (cons '("commit-message" . "Escreva uma mensagem de commit concisa no formato de conventional commit para o seguinte diff. A mensagem deve ser em português do Brasil:\n\n{diff}")
-                 (assq-delete-all "commit-message" copilot-chat-prompts))))
-      (copilot-chat-insert-commit-message)))
-
-  ;; Adiciona os atalhos para as funções de commit no menu do Copilot
-  (map! :leader
-        :prefix ("z" . "Copilot")
-        "m" #'my/copilot-insert-commit-message-en
-        "M" #'my/copilot-insert-commit-message-pt-br))
