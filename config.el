@@ -5,10 +5,11 @@
 (setq display-line-numbers-type 'relative)
 (setq org-directory "~/org/")
 (setq evil-split-window-below t evil-vsplit-window-right t)
+(setq shell-file-name (executable-find "bash"))
 
 (add-to-list 'default-frame-alist '(inhibit-double-buffering . t)) ;; prevent some cases of flickering
 (add-to-list 'initial-frame-alist '(fullscreen . maximized))
-(fset 'rainbow-delimiters-mode #'ignore) ;; disable rainbow delimiters 💅
+;;(fset 'rainbow-delimiters-mode #'ignore) ;; disable rainbow delimiters 💅
 (setq doom-scratch-initial-major-mode 'org-mode) ;; scratch buffer org mode
 
 ;;(setq scroll-step 1
@@ -59,10 +60,18 @@
 
 (use-package! copilot-chat) ;; We define bindings below using the map! macro
 
-;; (add-hook 'git-commit-setup-hook 'copilot-chat-insert-commit-message)
-(setq copilot-chat-follow t)
+(add-hook 'git-commit-setup-hook #'copilot-chat-insert-commit-message)
 
 (after! copilot-chat
+  (setq copilot-chat-follow t)
+  (setq copilot-chat-commit-prompt
+        (concat
+         "Escreva uma mensagem de commit em português (pt-BR), no padrão Conventional Commits. "
+         "Use este formato: tipo(escopo opcional): resumo no imperativo e em minúsculas. "
+         "Tipos permitidos: feat, fix, docs, style, refactor, test, chore, perf, build, ci. "
+         "Se útil, inclua corpo curto (1-3 linhas) explicando o porquê da mudança. "
+         "Não invente mudanças; use apenas o diff disponível. "
+         "Retorne apenas a mensagem de commit final, sem markdown e sem explicações."))
   (set-popup-rule! "^\*Copilot Chat.*"
     :side 'right      ; Exibir no lado direito
     :size 0.33        ; Ocupar 33% da largura do frame
@@ -75,10 +84,8 @@
 (use-package! copilot
   :hook (prog-mode . copilot-mode)
   :bind (:map copilot-completion-map
-              ("<tab>" . 'copilot-accept-completion)
-              ("TAB" . 'copilot-accept-completion)
-              ("C-TAB" . 'copilot-accept-completion-by-word)
-              ("C-<tab>" . 'copilot-accept-completion-by-word))
+              ("<tab>" . #'copilot-accept-completion)
+              ("C-<tab>" . #'copilot-accept-completion-by-word))
   :config
   ;; Fix for "copilot--infer-indentation-offset found no mode-specific indentation offset"
   (setq copilot-indentation-offset 2))
