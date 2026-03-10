@@ -60,7 +60,7 @@
 
 (use-package! copilot-chat) ;; We define bindings below using the map! macro
 
-(add-hook 'git-commit-setup-hook #'copilot-chat-insert-commit-message)
+;; (add-hook 'git-commit-setup-hook #'copilot-chat-insert-commit-message)
 
 (after! copilot-chat
   (setq copilot-chat-follow t)
