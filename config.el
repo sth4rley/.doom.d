@@ -87,8 +87,9 @@
               ("<tab>" . #'copilot-accept-completion)
               ("C-<tab>" . #'copilot-accept-completion-by-word))
   :config
-  ;; Fix for "copilot--infer-indentation-offset found no mode-specific indentation offset"
-  (setq copilot-indentation-offset 2))
+  ;; Warning happens for modes not present in `copilot-indentation-alist`.
+  ;; Copilot still falls back to `standard-indent`.
+  (setq copilot-indent-offset-warning-disable t))
 
 ;;; Standardized Copilot Keybindings
 (map! :leader
