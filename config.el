@@ -2,6 +2,9 @@
 
 (setq doom-theme 'doom-sourcerer)
 (setq doom-font (font-spec :family "JetBrainsMono Nerd Font" :size 15))
+;; fonte proporcional, usada no texto do markdown renderizado
+;; (Adwaita Sans: derivada da Inter, desenhada para leitura em tela)
+(setq doom-variable-pitch-font (font-spec :family "Adwaita Sans"))
 (setq display-line-numbers-type 'relative)
 (setq org-directory "~/org/")
 (setq evil-split-window-below t evil-vsplit-window-right t)
@@ -58,46 +61,35 @@
   )
 
 
-(use-package! copilot-chat) ;; We define bindings below using the map! macro
+;;; Ortografia
+;; hunspell com português e inglês juntos: as specs misturam pt-BR com termos
+;; técnicos (endpoint, deploy, payload). O pt_BR vem do pacote hunspell-pt-BR.
+;; Palavras aceitas com zg vão para o dicionario-pessoal.txt deste diretório.
+(after! ispell
+  (setq ispell-personal-dictionary (expand-file-name "dicionario-pessoal.txt" doom-user-dir))
+  (ispell-set-spellchecker-params)
+  (if (not (assoc "pt_BR" ispell-hunspell-dict-paths-alist))
+      (message "Ortografia: falta o dicionário pt_BR (sudo dnf install hunspell-pt-BR)")
+    (setq ispell-dictionary "pt_BR,en_US")
+    (ispell-hunspell-add-multi-dic "pt_BR,en_US"))
 
-;; (add-hook 'git-commit-setup-hook #'copilot-chat-insert-commit-message)
+  ;; o hunspell avisa no stderr quando não converte um caractere (o ⚠️, já que o
+  ;; dicionário pt_BR é ISO8859-1); misturado à lista de palavras erradas, o
+  ;; aviso aparecia no rodapé como "error - iconv ... word not found"
+  (defadvice! my/ispell-discard-stderr-a (args)
+    :filter-args #'ispell-call-process-region
+    (let ((dest (nth 4 args)))
+      (if (bufferp dest)
+          (append (seq-take args 4) (list (list dest nil)) (nthcdr 5 args))
+        args))))
 
-(after! copilot-chat
-  (setq copilot-chat-follow t)
-  (setq copilot-chat-commit-prompt
-        (concat
-         "Escreva uma mensagem de commit em português (pt-BR), no padrão Conventional Commits. "
-         "Use este formato: tipo(escopo opcional): resumo no imperativo e em minúsculas. "
-         "Tipos permitidos: feat, fix, docs, style, refactor, test, chore, perf, build, ci. "
-         "Se útil, inclua corpo curto (1-3 linhas) explicando o porquê da mudança. "
-         "Não invente mudanças; use apenas o diff disponível. "
-         "Retorne apenas a mensagem de commit final, sem markdown e sem explicações."))
-  (set-popup-rule! "^\*Copilot Chat.*"
-    :side 'right      ; Exibir no lado direito
-    :size 0.33        ; Ocupar 33% da largura do frame
-    :select t         ; Selecionar automaticamente a janela quando ela abrir
-    :quit t           ; Torná-la "quit-able" (essencial para o ESC)
-    :ttl nil))        ; Não fechar automaticamente (time-to-live)
 
-;; accept completion from copilot and fallback to company
-;; acredito que eu não esteja usando o company, mas sim o corfu (verificar em init.el)
-(defun my/copilot-maybe-enable-h ()
-  "Liga o copilot só se o servidor dele estiver instalado.
-Sem o servidor, ligar o `copilot-mode' dá erro e interrompe a abertura do
-arquivo: o código ficava sem cores e sem LSP."
-  (when (and (require 'copilot nil t)
-             (ignore-errors (copilot-server-executable)))
-    (copilot-mode +1)))
+;;; Web
+;; templates Jinja do Flask (pastas templates*/): o motor django do web-mode
+;; entende {% %} e {{ }}
+(after! web-mode
+  (add-to-list 'web-mode-engines-alist '("django" . "templates[^/]*/.+\\.html?\\'")))
 
-(use-package! copilot
-  :hook (prog-mode . my/copilot-maybe-enable-h)
-  :bind (:map copilot-completion-map
-              ("<tab>" . #'copilot-accept-completion)
-              ("C-<tab>" . #'copilot-accept-completion-by-word))
-  :config
-  ;; Warning happens for modes not present in `copilot-indentation-alist`.
-  ;; Copilot still falls back to `standard-indent`.
-  (setq copilot-indent-offset-warning-disable t))
 
 ;;; Markdown
 ;; .md abre renderizado no próprio buffer (markdown-modern): títulos com tamanhos
@@ -149,16 +141,78 @@ arquivo: o código ficava sem cores e sem LSP."
           ;; as tabelas são dimensionadas pela largura da janela: redesenha
           (with-current-buffer (window-buffer win) (jit-lock-refontify)))))))
 
-(defun my/markdown-top-padding-h ()
-  "Espaço acima da primeira linha do documento, como a margem de topo de uma página."
-  (remove-overlays (point-min) (point-min) 'my/markdown-top-padding t)
-  (let ((ov (make-overlay (point-min) (point-min))))
-    (overlay-put ov 'my/markdown-top-padding t)
-    (overlay-put ov 'before-string (propertize "\n" 'face '(:height 2.5))))
-  ;; some ao voltar para o fonte puro (SPC m m)
-  (add-hook 'change-major-mode-hook
-            (lambda () (remove-overlays (point-min) (point-min) 'my/markdown-top-padding t))
-            nil t))
+(defvar my/markdown-heading-space '((1 . 1.2) (2 . 0.5) (3 . 0.3))
+  "Espaço extra acima dos títulos, por nível, em alturas de linha.
+Níveis fora da lista não ganham espaço.")
+
+(defvar my/markdown-top-space 2.4
+  "Altura da primeira linha do documento, em múltiplos da altura do título.
+O que passa da altura do título vira a margem do topo.")
+
+(defvar-local my/markdown-heading-space-timer nil)
+
+(defun my/markdown-heading-space-refresh (&optional buf)
+  "Põe um espaço acima de cada título, maior quanto mais alto o nível, e a
+margem do topo do documento.
+Vale com a seção aberta ou dobrada: na lista de títulos dobrados funciona
+como um padding entre eles.  Nada disso é uma linha extra antes do título:
+como a marcação `## ' fica escondida no começo da linha, uma linha extra ali
+fazia o cursor ser desenhado no título de cima e o TAB abrir o de baixo."
+  (with-current-buffer (or buf (current-buffer))
+    (remove-overlays (point-min) (point-max) 'my/markdown-heading-space t)
+    (save-excursion
+      ;; margem do topo: a primeira linha na tela fica mais alta (o excesso do
+      ;; line-height vai para cima do texto); com o título dobrado, essa linha
+      ;; termina na primeira quebra de linha visível depois dele
+      (goto-char (point-min))
+      (if (looking-at "#\\{1,6\\}[ \t]")
+          (let ((nl (line-end-position)))
+            (while (and (< nl (point-max)) (invisible-p nl))
+              (setq nl (next-single-char-property-change nl 'invisible)))
+            (when (< nl (point-max))
+              (let ((ov (make-overlay nl (1+ nl))))
+                (overlay-put ov 'my/markdown-heading-space t)
+                (overlay-put ov 'line-height (cons nil my/markdown-top-space)))))
+        ;; documento que não começa com título: uma linha vazia antes dele
+        (let ((ov (make-overlay (point-min) (point-min))))
+          (overlay-put ov 'my/markdown-heading-space t)
+          (overlay-put ov 'before-string (propertize "\n" 'face '(:height 2.5)))))
+      (while (re-search-forward "^\\(#\\{1,6\\}\\)[ \t]" nil t)
+        (let ((ratio (alist-get (length (match-string 1)) my/markdown-heading-space))
+              (bol (match-beginning 0)))
+          ;; o espaço fica embaixo da linha anterior (line-spacing na quebra de
+          ;; linha antes do título), não numa linha extra: com uma linha extra
+          ;; o cursor era desenhado no título de cima e o TAB abria o de baixo
+          (when (and ratio
+                     (> bol (point-min))
+                     (not (save-match-data (markdown-modern--fenced-code-block-at bol))))
+            (let ((ov (make-overlay (1- bol) bol)))
+              (overlay-put ov 'my/markdown-heading-space t)
+              (overlay-put ov 'line-spacing ratio))))))))
+
+(defun my/markdown-heading-space-schedule-h (&rest _)
+  "Recalcula o espaço dos títulos logo depois de uma edição ou dobra."
+  (when (derived-mode-p 'markdown-modern-mode)
+    (when (timerp my/markdown-heading-space-timer)
+      (cancel-timer my/markdown-heading-space-timer))
+    (setq my/markdown-heading-space-timer
+          (run-with-timer 0.1 nil (lambda (buf)
+                                    (when (buffer-live-p buf)
+                                      (my/markdown-heading-space-refresh buf)))
+                          (current-buffer)))))
+
+(defun my/markdown-flyspell-check-word-p ()
+  "Diz ao flyspell se checa a palavra antes do cursor.
+Pula código (inline e em bloco), URLs e o texto que a renderização esconde
+ou substitui, como a marcação e as tabelas."
+  (let ((pos (1- (point))))
+    (not (or (get-char-property pos 'display)
+             (cl-some (lambda (ov)
+                        (memq (overlay-get ov 'face)
+                              '(markdown-modern-inline-code markdown-modern-link-url)))
+                      (overlays-at pos))
+             (save-excursion (goto-char pos) (thing-at-point 'url))
+             (save-match-data (markdown-modern--fenced-code-block-at pos))))))
 
 (use-package! markdown-modern
   :mode ("\\.md\\'" . markdown-modern-mode)
@@ -175,7 +229,15 @@ arquivo: o código ficava sem cores e sem LSP."
     (add-hook 'window-size-change-functions #'my/markdown-center-column-h nil t)
     (add-hook 'window-buffer-change-functions #'my/markdown-center-column-h nil t)
     (my/markdown-center-column-h))
-  (add-hook 'markdown-modern-mode-hook #'my/markdown-top-padding-h)
+  ;; margem do topo e espaço acima dos títulos (nível 1 > 2 > 3), para cada
+  ;; seção começar visivelmente; recalculado ao editar e ao dobrar/desdobrar
+  (add-hook! 'markdown-modern-mode-hook
+    (my/markdown-heading-space-refresh)
+    (add-hook 'after-change-functions #'my/markdown-heading-space-schedule-h nil t)
+    (add-hook 'change-major-mode-hook
+              (lambda () (remove-overlays (point-min) (point-max) 'my/markdown-heading-space t))
+              nil t))
+  (advice-add 'outline-flag-region :after #'my/markdown-heading-space-schedule-h)
 
   ;; com variable-pitch, os números de linha herdam a fonte proporcional e as
   ;; linhas sem número (bordas e células das tabelas) ficam deslocadas
@@ -223,6 +285,12 @@ arquivo: o código ficava sem cores e sem LSP."
                 outline-level (lambda () (save-excursion (forward-line 0) (skip-chars-forward "#"))))
     (outline-minor-mode +1))
 
+  ;; corretor ortográfico: palavra errada fica sublinhada; ]s e [s pulam entre
+  ;; os erros, z= mostra sugestões, zg aceita a palavra
+  (when (modulep! :checkers spell +flyspell)
+    (set-flyspell-predicate! 'markdown-modern-mode #'my/markdown-flyspell-check-word-p)
+    (add-hook 'markdown-modern-mode-hook #'flyspell-mode))
+
   (map! :map markdown-modern-mode-map
         :n "TAB"     #'my/markdown-fold-cycle   ;; título: fechado -> subtítulos -> tudo
         :n [backtab] #'outline-cycle-buffer     ;; documento todo: títulos de topo -> todos os títulos -> tudo
@@ -238,14 +306,3 @@ arquivo: o código ficava sem cores e sem LSP."
   (map! :map markdown-mode-map
         :localleader
         "m" #'my/markdown-toggle-rendering))
-
-;;; Standardized Copilot Keybindings
-(map! :leader
-      :prefix ("z" . "Copilot") ;; SPC z
-      ;; Chat Commands
-      "c" #'copilot-chat
-      "b" #'copilot-chat-chat-buffer
-      "r" #'copilot-chat-chat-region
-      ;; Yank Commands
-      "y" #'copilot-chat-yank
-      "Y" #'copilot-chat-yank-pop)

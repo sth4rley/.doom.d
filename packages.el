@@ -48,11 +48,6 @@
 ;; ...Or *all* packages (NOT RECOMMENDED; will likely break things)
 ;; (unpin! t)
 
-(package! copilot-chat)
-
-(package! copilot
-  :recipe (:host github :repo "copilot-emacs/copilot.el" :files ("*.el")))
-
 ;; markdown renderizado no próprio buffer (títulos, tabelas, ênfase)
 (package! markdown-modern
   :recipe (:host github :repo "rjprins/markdown-modern" :files ("lisp/*.el")))
