@@ -81,8 +81,16 @@
 
 ;; accept completion from copilot and fallback to company
 ;; acredito que eu não esteja usando o company, mas sim o corfu (verificar em init.el)
+(defun my/copilot-maybe-enable-h ()
+  "Liga o copilot só se o servidor dele estiver instalado.
+Sem o servidor, ligar o `copilot-mode' dá erro e interrompe a abertura do
+arquivo: o código ficava sem cores e sem LSP."
+  (when (and (require 'copilot nil t)
+             (ignore-errors (copilot-server-executable)))
+    (copilot-mode +1)))
+
 (use-package! copilot
-  :hook (prog-mode . copilot-mode)
+  :hook (prog-mode . my/copilot-maybe-enable-h)
   :bind (:map copilot-completion-map
               ("<tab>" . #'copilot-accept-completion)
               ("C-<tab>" . #'copilot-accept-completion-by-word))
@@ -90,6 +98,146 @@
   ;; Warning happens for modes not present in `copilot-indentation-alist`.
   ;; Copilot still falls back to `standard-indent`.
   (setq copilot-indent-offset-warning-disable t))
+
+;;; Markdown
+;; .md abre renderizado no próprio buffer (markdown-modern): títulos com tamanhos
+;; diferentes, tabelas desenhadas e ajustadas à janela, sem a marcação visível.
+;; O elemento sob o cursor mostra o markdown cru para editar.
+(defun my/markdown-toggle-rendering ()
+  "Alterna entre o markdown renderizado (markdown-modern) e o fonte puro (markdown-mode)."
+  (interactive)
+  (if (derived-mode-p 'markdown-modern-mode)
+      (markdown-mode)
+    (markdown-modern-mode)))
+
+(defun my/markdown-outline-search (&optional bound move backward looking-at)
+  "Busca títulos markdown para o `outline', pulando `#' dentro de blocos de código."
+  (let ((re "^\\(#\\{1,6\\}\\)[ \t]"))
+    (if looking-at
+        (and (looking-at re)
+             (not (save-match-data (markdown-modern--fenced-code-block-at (point)))))
+      (let ((orig (point)) found)
+        (while (and (not found)
+                    (if backward
+                        (re-search-backward re bound t)
+                      (re-search-forward re bound t)))
+          (unless (save-match-data
+                    (markdown-modern--fenced-code-block-at (match-beginning 0)))
+            (setq found t)))
+        (cond (found t)
+              (move (goto-char (or bound (if backward (point-min) (point-max)))) nil)
+              (t (goto-char orig) nil))))))
+
+(defun my/markdown-fold-cycle ()
+  "No título: dobra/desdobra como o TAB do org. Fora dele não faz nada (nunca insere texto)."
+  (interactive)
+  (when (outline-on-heading-p)
+    (outline-cycle)))
+
+(defvar my/markdown-column-width 120
+  "Largura, em colunas, do texto do markdown renderizado (centralizado na janela).")
+
+(defun my/markdown-center-column-h (&optional win)
+  "Põe margens iguais dos dois lados da janela, deixando o texto numa coluna central."
+  (let ((win (if (windowp win) win (get-buffer-window nil t))))
+    (when (window-live-p win)
+      (let* ((margins (window-margins win))
+             (text (+ (window-body-width win) (or (car margins) 0) (or (cdr margins) 0)))
+             (side (max 0 (/ (- text my/markdown-column-width) 2))))
+        (unless (equal margins (cons side side))
+          (set-window-margins win side side)
+          ;; as tabelas são dimensionadas pela largura da janela: redesenha
+          (with-current-buffer (window-buffer win) (jit-lock-refontify)))))))
+
+(defun my/markdown-top-padding-h ()
+  "Espaço acima da primeira linha do documento, como a margem de topo de uma página."
+  (remove-overlays (point-min) (point-min) 'my/markdown-top-padding t)
+  (let ((ov (make-overlay (point-min) (point-min))))
+    (overlay-put ov 'my/markdown-top-padding t)
+    (overlay-put ov 'before-string (propertize "\n" 'face '(:height 2.5))))
+  ;; some ao voltar para o fonte puro (SPC m m)
+  (add-hook 'change-major-mode-hook
+            (lambda () (remove-overlays (point-min) (point-min) 'my/markdown-top-padding t))
+            nil t))
+
+(use-package! markdown-modern
+  :mode ("\\.md\\'" . markdown-modern-mode)
+  :config
+  ;; sem números de linha no markdown renderizado: numa tabela cada linha do
+  ;; arquivo ocupa várias linhas na tela e o número caía na borda, não no texto
+  ;; (SPC t l liga de volta no buffer atual)
+  (add-hook 'markdown-modern-mode-hook #'doom-disable-line-numbers-h)
+
+  ;; texto numa coluna central com margens iguais dos dois lados; sem o recuo
+  ;; de 4 espaços que o pacote põe só à esquerda
+  (setq markdown-modern-left-margin 0)
+  (add-hook! 'markdown-modern-mode-hook
+    (add-hook 'window-size-change-functions #'my/markdown-center-column-h nil t)
+    (add-hook 'window-buffer-change-functions #'my/markdown-center-column-h nil t)
+    (my/markdown-center-column-h))
+  (add-hook 'markdown-modern-mode-hook #'my/markdown-top-padding-h)
+
+  ;; com variable-pitch, os números de linha herdam a fonte proporcional e as
+  ;; linhas sem número (bordas e células das tabelas) ficam deslocadas
+  (add-hook! 'markdown-modern-mode-hook
+    (face-remap-add-relative 'line-number 'fixed-pitch)
+    (face-remap-add-relative 'line-number-current-line 'fixed-pitch))
+
+  ;; a largura das tabelas não desconta a coluna de números de linha, então as
+  ;; mais largas transbordavam a janela
+  (defadvice! my/markdown-modern-table-width-a (cols)
+    :filter-return #'markdown-modern-render--table-display-width
+    (if-let* ((win (get-buffer-window)))
+        (max 20 (- cols (ceiling (line-number-display-width t)
+                                 (window-font-width win 'markdown-modern-table))))
+      cols))
+
+  ;; só mostra o markdown cru do elemento sob o cursor no modo de inserção;
+  ;; no normal (lendo/navegando) tabelas, títulos e ênfases continuam renderizados
+  (defadvice! my/markdown-modern-reveal-only-insert-a (fn pos)
+    :around #'markdown-modern--markup-element-at
+    (when (or (not (bound-and-true-p evil-local-mode))
+              (memq evil-state '(insert replace emacs)))
+      (funcall fn pos)))
+
+  ;; bug do pacote: ao redesenhar um item de lista ele apaga só o item, mas
+  ;; redesenha a lista inteira, e as bolinhas dos outros itens se acumulavam;
+  ;; aqui a área apagada passa a cobrir tudo o que vai ser redesenhado
+  (defadvice! my/markdown-modern-clear-whole-elements-a (fn start end)
+    :around #'markdown-modern-render--render-region
+    (when (and (not markdown-modern-render--rendering-p) markdown-modern--rendering-enabled)
+      (dolist (el (markdown-modern-ts--elements-in-region start end))
+        (setq start (min start (markdown-modern-node-start el))
+              end (max end (markdown-modern-node-end el)))))
+    (funcall fn start end))
+
+  ;; com a marcação escondida (`## ' vira display ""), o Emacs empurra o cursor
+  ;; para a linha de cima ao subir para um título, e ele caía na seção anterior
+  (setq-hook! 'markdown-modern-mode-hook global-disable-point-adjustment t)
+
+  ;; fold de seções como no org: o outline do Emacs passa a reconhecer os títulos
+  ;; markdown, e os atalhos do módulo fold do Doom (za, zo, zc, zM, zR) funcionam
+  (add-hook! 'markdown-modern-mode-hook
+    (setq-local outline-regexp "#\\{1,6\\}[ \t]"
+                outline-search-function #'my/markdown-outline-search
+                outline-level (lambda () (save-excursion (forward-line 0) (skip-chars-forward "#"))))
+    (outline-minor-mode +1))
+
+  (map! :map markdown-modern-mode-map
+        :n "TAB"     #'my/markdown-fold-cycle   ;; título: fechado -> subtítulos -> tudo
+        :n [backtab] #'outline-cycle-buffer     ;; documento todo: títulos de topo -> todos os títulos -> tudo
+        :m "]h"      #'markdown-modern-next-heading
+        :m "[h"      #'markdown-modern-prev-heading
+        :localleader
+        "m" #'my/markdown-toggle-rendering            ;; SPC m m: fonte puro <-> renderizado
+        "e" #'markdown-modern-toggle-element-at-point ;; mostra/esconde o cru do elemento
+        "'" #'markdown-modern-edit-code-block
+        "w" #'markdown-modern-toggle-truncate-lines)) ;; rolagem horizontal em vez de quebrar
+
+(after! markdown-mode
+  (map! :map markdown-mode-map
+        :localleader
+        "m" #'my/markdown-toggle-rendering))
 
 ;;; Standardized Copilot Keybindings
 (map! :leader
