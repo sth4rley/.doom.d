@@ -61,29 +61,6 @@
   )
 
 
-;;; Ortografia
-;; hunspell com português e inglês juntos: as specs misturam pt-BR com termos
-;; técnicos (endpoint, deploy, payload). O pt_BR vem do pacote hunspell-pt-BR.
-;; Palavras aceitas com zg vão para o dicionario-pessoal.txt deste diretório.
-(after! ispell
-  (setq ispell-personal-dictionary (expand-file-name "dicionario-pessoal.txt" doom-user-dir))
-  (ispell-set-spellchecker-params)
-  (if (not (assoc "pt_BR" ispell-hunspell-dict-paths-alist))
-      (message "Ortografia: falta o dicionário pt_BR (sudo dnf install hunspell-pt-BR)")
-    (setq ispell-dictionary "pt_BR,en_US")
-    (ispell-hunspell-add-multi-dic "pt_BR,en_US"))
-
-  ;; o hunspell avisa no stderr quando não converte um caractere (o ⚠️, já que o
-  ;; dicionário pt_BR é ISO8859-1); misturado à lista de palavras erradas, o
-  ;; aviso aparecia no rodapé como "error - iconv ... word not found"
-  (defadvice! my/ispell-discard-stderr-a (args)
-    :filter-args #'ispell-call-process-region
-    (let ((dest (nth 4 args)))
-      (if (bufferp dest)
-          (append (seq-take args 4) (list (list dest nil)) (nthcdr 5 args))
-        args))))
-
-
 ;;; Web
 ;; templates Jinja do Flask (pastas templates*/): o motor django do web-mode
 ;; entende {% %} e {{ }}
@@ -139,7 +116,11 @@
         (unless (equal margins (cons side side))
           (set-window-margins win side side)
           ;; as tabelas são dimensionadas pela largura da janela: redesenha
-          (with-current-buffer (window-buffer win) (jit-lock-refontify)))))))
+          (with-current-buffer (window-buffer win) (jit-lock-refontify)))
+        ;; bordas (fringes) entre a margem e o texto, não na beira da janela:
+        ;; as marcas delas (texto apagado, git) ficam junto do texto
+        (when (nth 2 (window-fringes win))
+          (set-window-fringes win nil nil nil))))))
 
 (defvar my/markdown-heading-space '((1 . 1.2) (2 . 0.5) (3 . 0.3))
   "Espaço extra acima dos títulos, por nível, em alturas de linha.
@@ -149,7 +130,7 @@ Níveis fora da lista não ganham espaço.")
   "Altura da primeira linha do documento, em múltiplos da altura do título.
 O que passa da altura do título vira a margem do topo.")
 
-(defvar-local my/markdown-heading-space-timer nil)
+(defvar-local my/markdown-refresh-timer nil)
 
 (defun my/markdown-heading-space-refresh (&optional buf)
   "Põe um espaço acima de cada título, maior quanto mais alto o nível, e a
@@ -190,29 +171,217 @@ fazia o cursor ser desenhado no título de cima e o TAB abrir o de baixo."
               (overlay-put ov 'my/markdown-heading-space t)
               (overlay-put ov 'line-spacing ratio))))))))
 
-(defun my/markdown-heading-space-schedule-h (&rest _)
-  "Recalcula o espaço dos títulos logo depois de uma edição ou dobra."
+(defun my/markdown-refresh-schedule-h (&rest _)
+  "Recalcula o espaço dos títulos e o destaque das anotações para o Claude
+logo depois de uma edição ou dobra."
   (when (derived-mode-p 'markdown-modern-mode)
-    (when (timerp my/markdown-heading-space-timer)
-      (cancel-timer my/markdown-heading-space-timer))
-    (setq my/markdown-heading-space-timer
+    (when (timerp my/markdown-refresh-timer)
+      (cancel-timer my/markdown-refresh-timer))
+    (setq my/markdown-refresh-timer
           (run-with-timer 0.1 nil (lambda (buf)
                                     (when (buffer-live-p buf)
-                                      (my/markdown-heading-space-refresh buf)))
+                                      (my/markdown-heading-space-refresh buf)
+                                      (my/markdown-claude-notes-refresh buf)))
                           (current-buffer)))))
 
-(defun my/markdown-flyspell-check-word-p ()
-  "Diz ao flyspell se checa a palavra antes do cursor.
-Pula código (inline e em bloco), URLs e o texto que a renderização esconde
-ou substitui, como a marcação e as tabelas."
-  (let ((pos (1- (point))))
-    (not (or (get-char-property pos 'display)
-             (cl-some (lambda (ov)
-                        (memq (overlay-get ov 'face)
-                              '(markdown-modern-inline-code markdown-modern-link-url)))
-                      (overlays-at pos))
-             (save-excursion (goto-char pos) (thing-at-point 'url))
-             (save-match-data (markdown-modern--fenced-code-block-at pos))))))
+(defun my/markdown-remove-decorations-h ()
+  "Tira os overlays desta configuração (ao trocar para o fonte puro com SPC m m)."
+  (dolist (prop '(my/markdown-heading-space my/markdown-claude-note my/markdown-change))
+    (remove-overlays (point-min) (point-max) prop t)))
+
+(defun my/markdown-reveal-point ()
+  "Abre a seção dobrada em que o cursor caiu."
+  (when (invisible-p (point))
+    (outline-show-entry)))
+
+;; seção atual no topo da janela: o caminho de títulos até o cursor, como
+;; "Parte A › A3. Os impostos", para não se perder rolando uma spec longa
+(defface my/markdown-breadcrumb '((t :inherit (variable-pitch shadow) :height 0.9))
+  "Caminho de títulos mostrado no topo da janela do markdown.")
+
+(defvar-local my/markdown-breadcrumb-cache nil
+  "Último caminho calculado, como ((TICK . PONTO) . TEXTO).")
+
+(defun my/markdown-heading-title ()
+  "Texto do título da linha atual, sem os `#' e sem a marcação inline."
+  (let ((s (buffer-substring-no-properties (line-beginning-position) (line-end-position))))
+    (pcase-dolist (`(,re . ,rep) '(("\\`#+[ \t]+" . "")
+                                   ("[ \t]+#+[ \t]*\\'" . "")
+                                   ("\\[\\([^]]*\\)\\]([^)]*)" . "\\1")
+                                   ("\\*\\*\\|__\\|`" . "")))
+      (setq s (replace-regexp-in-string re rep s)))
+    s))
+
+(defun my/markdown-breadcrumb ()
+  "Caminho de títulos até a seção do cursor (calculado de novo só quando o
+cursor ou o texto mudam)."
+  (let ((key (cons (buffer-chars-modified-tick) (point))))
+    (unless (equal key (car my/markdown-breadcrumb-cache))
+      (setq my/markdown-breadcrumb-cache
+            (cons key
+                  (save-excursion
+                    (save-match-data
+                      (when (ignore-errors (outline-back-to-heading t) t)
+                        (let ((path (list (my/markdown-heading-title))))
+                          (while (ignore-errors (outline-up-heading 1 t) t)
+                            (push (my/markdown-heading-title) path))
+                          (string-join path "  ›  "))))))))
+    (cdr my/markdown-breadcrumb-cache)))
+
+(defun my/markdown-breadcrumb-setup-h ()
+  "Mostra o caminho de títulos no topo, com o fundo do texto e um respiro."
+  (setq-local header-line-format
+              '((:eval (when-let* ((path (my/markdown-breadcrumb)))
+                         (concat (propertize " " 'display '(space :align-to 0))
+                                 (propertize path 'face 'my/markdown-breadcrumb))))))
+  (let ((bg (face-background 'default nil t)))
+    (face-remap-add-relative 'header-line
+                             `(:background ,bg :box (:line-width (0 . 8) :color ,bg)
+                               :underline nil :overline nil))))
+
+;; o que mudou no arquivo fora do Emacs (o Claude editando a spec) fica com o
+;; fundo destacado até o ESC; onde só saiu texto, uma seta na borda esquerda
+(defface my/markdown-change '((t :inherit highlight :extend t))
+  "Linhas que mudaram no arquivo fora do Emacs.")
+
+(defface my/markdown-change-removed '((t :inherit error))
+  "Seta na borda onde saiu texto do arquivo sem entrar nada no lugar.")
+
+(custom-set-faces!
+  `(my/markdown-change
+    :background ,(or (ignore-errors (doom-blend (doom-color 'green) (doom-color 'bg) 0.2))
+                     'unspecified)
+    :extend t))
+
+(defvar-local my/markdown-text-before-revert nil
+  "Texto do buffer antes do recarregamento, para comparar com o novo.")
+
+(defun my/markdown-save-text-h ()
+  "Guarda o texto de antes do recarregamento."
+  (setq my/markdown-text-before-revert
+        (buffer-substring-no-properties (point-min) (point-max))))
+
+(defun my/markdown-show-changes-h ()
+  "Destaca as linhas que o recarregamento mudou, comparando com `diff' o
+texto de antes e o de agora."
+  (when-let* ((old (prog1 my/markdown-text-before-revert
+                     (setq my/markdown-text-before-revert nil))))
+    (let* ((coding-system-for-write 'utf-8-unix)
+           (coding-system-for-read 'utf-8-unix)
+           (file (make-temp-file "markdown-antes" nil ".md"))
+           hunks)
+      (write-region old nil file nil 'silent)
+      (unwind-protect
+          (let ((out (generate-new-buffer " *markdown-diff*")))
+            (unwind-protect
+                (progn
+                  (call-process-region (point-min) (point-max) "diff" nil out nil "-U0" file "-")
+                  (with-current-buffer out
+                    (goto-char (point-min))
+                    ;; @@ -antes +INÍCIO,QUANTAS @@ (linhas no texto novo)
+                    (while (re-search-forward "^@@ -[0-9,]+ \\+\\([0-9]+\\)\\(?:,\\([0-9]+\\)\\)? @@" nil t)
+                      (push (cons (string-to-number (match-string 1))
+                                  (if (match-string 2) (string-to-number (match-string 2)) 1))
+                            hunks))))
+              (kill-buffer out)))
+        (delete-file file))
+      (save-excursion
+        (pcase-dolist (`(,line . ,count) hunks)
+          (goto-char (point-min))
+          (if (> count 0)
+              (let ((ov (make-overlay (progn (forward-line (1- line)) (point))
+                                      (progn (forward-line count) (point))
+                                      nil t nil)))
+                (overlay-put ov 'my/markdown-change t)
+                (overlay-put ov 'face 'my/markdown-change))
+            ;; só saiu texto: a seta fica na linha logo depois do que saiu
+            (forward-line line)
+            (let ((ov (make-overlay (point) (point))))
+              (overlay-put ov 'my/markdown-change t)
+              (overlay-put ov 'before-string
+                           (propertize "-" 'display '(left-fringe right-triangle my/markdown-change-removed))))))))))
+
+(defun my/markdown-clear-changes-h ()
+  "ESC tira o destaque das mudanças que vieram de fora."
+  (when (and (derived-mode-p 'markdown-modern-mode)
+             (seq-some (lambda (o) (overlay-get o 'my/markdown-change))
+                       (overlays-in (point-min) (point-max))))
+    (remove-overlays (point-min) (point-max) 'my/markdown-change t)
+    t))
+
+(defun my/markdown-next-change (&optional back)
+  "Vai para a próxima mudança destacada (com BACK, para a anterior)."
+  (interactive)
+  (let* ((starts (sort (delete-dups
+                        (mapcar #'overlay-start
+                                (seq-filter (lambda (o) (overlay-get o 'my/markdown-change))
+                                            (overlays-in (point-min) (point-max)))))
+                       #'<))
+         (target (if back
+                     (car (last (seq-filter (lambda (p) (< p (line-beginning-position))) starts)))
+                   (seq-find (lambda (p) (> p (line-end-position))) starts))))
+    (if (not target)
+        (message "Nenhuma outra mudança destacada")
+      (goto-char target)
+      (my/markdown-reveal-point))))
+
+(defun my/markdown-previous-change ()
+  "Vai para a mudança destacada anterior."
+  (interactive)
+  (my/markdown-next-change t))
+
+;; anotações de revisão para o Claude: <!-- @claude: ... --> no meio da spec,
+;; destacadas; depois é só pedir ao Claude "resolva as anotações @claude"
+(defface my/markdown-claude-note '((t :inherit font-lock-warning-face :slant italic))
+  "Anotação para o Claude no meio da spec.")
+
+(defconst my/markdown-claude-note-re "<!--[ \t\n]*@claude\\(?:.\\|\n\\)*?-->"
+  "Anotação para o Claude: um comentário HTML que começa com @claude.")
+
+(defun my/markdown-claude-notes-refresh (&optional buf)
+  "Destaca as anotações para o Claude."
+  (with-current-buffer (or buf (current-buffer))
+    (remove-overlays (point-min) (point-max) 'my/markdown-claude-note t)
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward my/markdown-claude-note-re nil t)
+        (let ((ov (make-overlay (match-beginning 0) (match-end 0))))
+          (overlay-put ov 'my/markdown-claude-note t)
+          (overlay-put ov 'face 'my/markdown-claude-note))))))
+
+(defun my/markdown-claude-note-insert ()
+  "Abre uma anotação para o Claude numa linha nova abaixo do cursor."
+  (interactive)
+  (end-of-line)
+  (insert "\n<!-- @claude:  -->")
+  (backward-char 4)
+  (when (bound-and-true-p evil-local-mode)
+    (evil-insert-state)))
+
+(defun my/markdown-claude-note-next (&optional back)
+  "Vai para a próxima anotação para o Claude (com BACK, para a anterior)."
+  (interactive)
+  (let ((pos (save-excursion
+               (if back
+                   (progn (beginning-of-line)
+                          (re-search-backward "<!--[ \t\n]*@claude" nil t))
+                 (end-of-line)
+                 (and (re-search-forward "<!--[ \t\n]*@claude" nil t)
+                      (match-beginning 0))))))
+    (if (not pos)
+        (message "Nenhuma outra anotação @claude")
+      (goto-char pos)
+      (my/markdown-reveal-point))))
+
+(defun my/markdown-claude-note-previous ()
+  "Vai para a anotação para o Claude anterior."
+  (interactive)
+  (my/markdown-claude-note-next t))
+
+(defun my/markdown-claude-note-list ()
+  "Lista as anotações para o Claude da spec, para pular para uma delas."
+  (interactive)
+  (consult-line "@claude"))
 
 (use-package! markdown-modern
   :mode ("\\.md\\'" . markdown-modern-mode)
@@ -233,11 +402,22 @@ ou substitui, como a marcação e as tabelas."
   ;; seção começar visivelmente; recalculado ao editar e ao dobrar/desdobrar
   (add-hook! 'markdown-modern-mode-hook
     (my/markdown-heading-space-refresh)
-    (add-hook 'after-change-functions #'my/markdown-heading-space-schedule-h nil t)
-    (add-hook 'change-major-mode-hook
-              (lambda () (remove-overlays (point-min) (point-max) 'my/markdown-heading-space t))
-              nil t))
-  (advice-add 'outline-flag-region :after #'my/markdown-heading-space-schedule-h)
+    (my/markdown-claude-notes-refresh)
+    (add-hook 'after-change-functions #'my/markdown-refresh-schedule-h nil t)
+    (add-hook 'change-major-mode-hook #'my/markdown-remove-decorations-h nil t))
+  (advice-add 'outline-flag-region :after #'my/markdown-refresh-schedule-h)
+
+  (add-hook 'markdown-modern-mode-hook #'my/markdown-breadcrumb-setup-h)
+
+  ;; o recarregamento troca só os trechos que mudaram (em vez de tudo entre a
+  ;; primeira e a última mudança, o que abria as dobras do meio), e cada
+  ;; trecho fica destacado
+  (add-hook! 'markdown-modern-mode-hook
+    (setq-local revert-buffer-insert-file-contents-function
+                #'revert-buffer-insert-file-contents-delicately)
+    (add-hook 'before-revert-hook #'my/markdown-save-text-h nil t)
+    (add-hook 'after-revert-hook #'my/markdown-show-changes-h nil t))
+  (add-hook 'doom-escape-hook #'my/markdown-clear-changes-h)
 
   ;; com variable-pitch, os números de linha herdam a fonte proporcional e as
   ;; linhas sem número (bordas e células das tabelas) ficam deslocadas
@@ -283,20 +463,31 @@ ou substitui, como a marcação e as tabelas."
     (setq-local outline-regexp "#\\{1,6\\}[ \t]"
                 outline-search-function #'my/markdown-outline-search
                 outline-level (lambda () (save-excursion (forward-line 0) (skip-chars-forward "#"))))
-    (outline-minor-mode +1))
+    (outline-minor-mode +1)
+    ;; ao recarregar o arquivo, as dobras ficam como estavam (só o trecho
+    ;; alterado é trocado); o restaurador do outline fecharia cada seção
+    ;; dobrada junto com os subtítulos, e a lista de títulos perderia os subtítulos
+    (remove-hook 'revert-buffer-restore-functions #'outline-revert-buffer-restore-visibility t))
 
-  ;; corretor ortográfico: palavra errada fica sublinhada; ]s e [s pulam entre
-  ;; os erros, z= mostra sugestões, zg aceita a palavra
-  (when (modulep! :checkers spell +flyspell)
-    (set-flyspell-predicate! 'markdown-modern-mode #'my/markdown-flyspell-check-word-p)
-    (add-hook 'markdown-modern-mode-hook #'flyspell-mode))
+  ;; arquivo alterado fora do Emacs (o Claude Code editando a spec) aparece na
+  ;; hora, mesmo com o foco no terminal; o Doom só recarrega ao voltar para o
+  ;; Emacs ou trocar de buffer. Com alterações não salvas, não recarrega.
+  (add-hook! 'markdown-modern-mode-hook
+    (setq-local auto-revert-use-notify t)
+    (auto-revert-mode +1))
 
   (map! :map markdown-modern-mode-map
         :n "TAB"     #'my/markdown-fold-cycle   ;; título: fechado -> subtítulos -> tudo
         :n [backtab] #'outline-cycle-buffer     ;; documento todo: títulos de topo -> todos os títulos -> tudo
         :m "]h"      #'markdown-modern-next-heading
         :m "[h"      #'markdown-modern-prev-heading
+        :n "]m"      #'my/markdown-next-change           ;; mudanças vindas de fora
+        :n "[m"      #'my/markdown-previous-change
+        :n "]c"      #'my/markdown-claude-note-next      ;; anotações @claude
+        :n "[c"      #'my/markdown-claude-note-previous
         :localleader
+        "c" #'my/markdown-claude-note-insert          ;; SPC m c: anotação para o Claude
+        "C" #'my/markdown-claude-note-list            ;; SPC m C: lista as anotações
         "m" #'my/markdown-toggle-rendering            ;; SPC m m: fonte puro <-> renderizado
         "e" #'markdown-modern-toggle-element-at-point ;; mostra/esconde o cru do elemento
         "'" #'markdown-modern-edit-code-block
